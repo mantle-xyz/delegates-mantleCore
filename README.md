@@ -1,11 +1,11 @@
-# Delegates MantleCore
+# Delegates Repository
 
-This repository manages delegate data for MantleCore, featuring automated data validation and merge rules.
+This repository manages delegate data for the organization, featuring automated validation, merge rules, and synchronization workflows to ensure data integrity across multiple sources.
 
 ## 📋 Project Structure
 
 ```
-delegates-mantleCore/
+delegates-xxx/
 ├── delegates.json              # Delegate data file
 ├── .github/
 │   └── workflows/
