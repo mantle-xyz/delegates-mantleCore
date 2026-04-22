@@ -3,10 +3,18 @@ name: Validate Delegates
 on:
   push:
     branches: [main]
-    paths: ["delegates.json"]
+    paths:
+      - "delegates.json"
+      - ".github/delegates-limits.json"
+      - ".github/scripts/validate_delegates.py"
+      - ".github/workflows/validate-delegates.yml"
   pull_request:
     branches: [main]
-    paths: ["delegates.json"]
+    paths:
+      - "delegates.json"
+      - ".github/delegates-limits.json"
+      - ".github/scripts/validate_delegates.py"
+      - ".github/workflows/validate-delegates.yml"
 
 jobs:
   validate:
@@ -22,149 +30,25 @@ jobs:
 
       - name: Validate delegates.json
         id: validate
-        continue-on-error: true
-        run: |
-          echo "🔍 Starting validation of delegates.json file..."
-
-          # Check if file exists
-          if [ ! -f "delegates.json" ]; then
-            echo "❌ Error: delegates.json file does not exist"
-            echo "validation_result=failed" >> $GITHUB_OUTPUT
-            echo "validation_message=delegates.json file does not exist" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          # Validate JSON format
-          echo "📝 Validating JSON format..."
-          if ! python3 -m json.tool delegates.json > /dev/null 2>&1; then
-            echo "❌ Error: delegates.json file format is invalid"
-            echo "validation_result=failed" >> $GITHUB_OUTPUT
-            echo "validation_message=delegates.json file format is invalid" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          # Use Python for validation
-          python3 << 'EOF'
-          import json
-          import re
-          import sys
-          import os
-
-          def validate_ethereum_address(address):
-              """Validate Ethereum address format"""
-              if not isinstance(address, str):
-                  return False, "Address must be a string type"
-              
-              # Basic format validation
-              if not re.match(r'^(0x)?[0-9a-fA-F]{40}$', address):
-                  return False, "Invalid address format, must be 0x followed by 40 hexadecimal characters"
-              
-              # Add 0x prefix if missing
-              if not address.startswith('0x'):
-                  address = '0x' + address
-              
-              return True, address
-
-          def validate_delegates():
-              try:
-                  with open('delegates.json', 'r', encoding='utf-8') as f:
-                      delegates = json.load(f)
-                  
-                  if not isinstance(delegates, list):
-                      print("❌ Error: delegates must be an array")
-                      return False, ["delegates must be an array"]
-                  
-                  errors = []
-                  warnings = []
-                  addresses = set()
-                  
-                  for i, delegate in enumerate(delegates):
-                      # Validate Voteweight field
-                      if 'Voteweight' not in delegate:
-                          errors.append(f"Delegate {i+1} missing Voteweight field")
-                      elif not isinstance(delegate['Voteweight'], (int, float)) or delegate['Voteweight'] < 0:
-                          errors.append(f"Delegate {i+1} Voteweight must be a number >= 0")
-                      
-                      # Validate Address field
-                      if 'Address' not in delegate:
-                          errors.append(f"Delegate {i+1} missing Address field")
-                      else:
-                          valid, result = validate_ethereum_address(delegate['Address'])
-                          if not valid:
-                              errors.append(f"Delegate {i+1} Address validation failed: {delegate['Address']} - {result}")
-                          else:
-                              # Check for duplicate addresses
-                              normalized_address = result.lower()
-                              if normalized_address in addresses:
-                                  errors.append(f"Delegate {i+1} has duplicate address: {delegate['Address']}")
-                              else:
-                                  addresses.add(normalized_address)
-                      
-                      # Validate InternalReference field (optional)
-                      if 'InternalReference' in delegate and not isinstance(delegate['InternalReference'], str):
-                          warnings.append(f"Delegate {i+1} InternalReference should be a string type")
-                  
-                  # Output results
-                  if errors:
-                      print("❌ Validation failed!")
-                      print("\nError details:")
-                      for error in errors:
-                          print(f"   - {error}")
-                      if warnings:
-                          print("\n⚠️  Warnings:")
-                          for warning in warnings:
-                              print(f"   - {warning}")
-                      return False, errors
-                  else:
-                      print("✅ Validation passed!")
-                      print(f"📊 Validated {len(delegates)} delegates")
-                      if warnings:
-                          print("\n⚠️  Warnings:")
-                          for warning in warnings:
-                              print(f"   - {warning}")
-                      return True, []
-                      
-              except FileNotFoundError:
-                  print("❌ Error: delegates.json file does not exist")
-                  return False, ["delegates.json file does not exist"]
-              except json.JSONDecodeError as e:
-                  print(f"❌ Error: delegates.json file format is invalid - {e}")
-                  return False, [f"delegates.json file format is invalid - {e}"]
-              except Exception as e:
-                  print(f"❌ Error occurred during validation: {e}")
-                  return False, [f"Error occurred during validation: {e}"]
-
-          success, errors = validate_delegates()
-
-          # Write results to GitHub output
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              if success:
-                  f.write("validation_result=passed\n")
-                  f.write("validation_message=Validation passed\n")
-              else:
-                  f.write("validation_result=failed\n")
-                  f.write(f"validation_message={'|'.join(errors)}\n")
-
-          if not success:
-              sys.exit(1)
-          EOF
+        run: python3 .github/scripts/validate_delegates.py
 
       - name: Comment on PR (if applicable)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          VALIDATION_RESULT: ${{ steps.validate.outputs.validation_result }}
+          VALIDATION_MESSAGE: ${{ steps.validate.outputs.validation_message }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
         with:
           script: |
             const fs = require('fs');
 
-            // Get validation results from previous step
-            const validationResult = '${{ steps.validate.outputs.validation_result }}';
-            const validationMessage = '${{ steps.validate.outputs.validation_message }}';
-            const validationSuccess = '${{ steps.validate.outcome }}' === 'success';
+            const validationResult = process.env.VALIDATION_RESULT;
+            const validationMessage = process.env.VALIDATION_MESSAGE || '';
+            const validationSuccess = process.env.VALIDATION_OUTCOME === 'success';
 
             try {
               if (validationSuccess && validationResult === 'passed') {
-                // Read delegates for count
                 const delegates = JSON.parse(fs.readFileSync('delegates.json', 'utf8'));
                 github.rest.issues.createComment({
                   issue_number: context.issue.number,
@@ -173,8 +57,9 @@ jobs:
                   body: `✅ **Validation Passed**\n\n📊 Validated ${delegates.length} delegates\n\nAll address formats and required fields meet the requirements.`
                 });
               } else {
-                // Validation failed - show errors
-                const errors = validationMessage ? validationMessage.split('|') : ['Validation failed'];
+                const errors = validationMessage
+                  ? validationMessage.split('\n').map(e => e.trim()).filter(Boolean)
+                  : ['Validation failed'];
                 github.rest.issues.createComment({
                   issue_number: context.issue.number,
                   owner: context.repo.owner,
@@ -204,7 +89,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_AUTHOR: ${{ github.actor }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.head_ref }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
           EVENT_TYPE: ${{ github.event_name }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -223,164 +108,88 @@ jobs:
           print(sign)
           PY
           )
-          echo "✅ Signature generated: $SIGN"
+          echo "✅ Signature generated"
 
           # Determine notification content based on validation result
           if [ "$VALIDATION_OUTCOME" == "success" ] && [ "$VALIDATION_RESULT" == "passed" ]; then
-            # Success notification
             echo "📢 Sending success notification..."
-            
-            # Get delegate count for success message
+            TEMPLATE="green"
             DELEGATE_COUNT=$(python3 -c "import json; print(len(json.load(open('delegates.json'))))" 2>/dev/null || echo "N/A")
-            
-            # Set title based on event type
+
             if [ "$EVENT_TYPE" == "pull_request" ]; then
               TITLE="🟢 Ready for Review"
+              CONTENT="📊 验证数量：${DELEGATE_COUNT} 个 delegates
+          🏠 仓库：${REPO}
+          🔢 PR：#${PR_NUMBER}
+          🌿 分支：${BRANCH}
+          👤 作者：${PR_AUTHOR}
+          📝 标题：${PR_TITLE}"
             else
               TITLE="✅ Merged to Main"
+              CONTENT="🏠 仓库：${REPO}
+          🌿 分支：${BRANCH}
+          👤 操作者：${PR_AUTHOR}
+          📝 事件：${EVENT_TYPE}"
             fi
-            
-            MESSAGE_CONTENT='{
-              "config": {
-                "wide_screen_mode": true
-              },
-              "elements": [
-                {
-                  "tag": "markdown",
-                  "content": "🏠 仓库：'${REPO}'\n🌿 分支：'${BRANCH:-main}'\n👤 操作者：'${PR_AUTHOR}'\n📝 事件：'${EVENT_TYPE}'"
-                }
-              ],
-              "header": {
-                "template": "green",
-                "title": {
-                  "content": "'${TITLE}'",
-                  "tag": "plain_text"
-                }
-              }
-            }'
-            
-            if [ "$EVENT_TYPE" == "pull_request" ] && [ -n "$PR_URL" ]; then
-            MESSAGE_CONTENT='{
-              "config": {
-                "wide_screen_mode": true
-              },
-              "elements": [
-                {
-                  "tag": "markdown",
-                  "content": "📊 验证数量：'${DELEGATE_COUNT}' 个 delegates\n🏠 仓库：'${REPO}'\n🔢 PR：#'${PR_NUMBER}'\n🌿 分支：'${BRANCH}'\n👤 作者：'${PR_AUTHOR}'\n📝 标题：'${PR_TITLE}'"
-                },
-                {
-                  "tag": "action",
-                  "actions": [
-                    {
-                      "tag": "button",
-                      "text": {
-                        "tag": "plain_text",
-                        "content": "🔗 查看 Pull Request"
-                      },
-                      "type": "primary",
-                      "multi_url": {
-                        "url": "'${PR_URL}'",
-                        "pc_url": "",
-                        "android_url": "",
-                        "ios_url": ""
-                      }
-                    }
-                  ]
-                }
-              ],
-              "header": {
-                "template": "green",
-                "title": {
-                  "content": "🟢 Ready for Review",
-                  "tag": "plain_text"
-                }
-              }
-            }'
-            fi
-            
           else
-            # Failure notification
             echo "📢 Sending failure notification..."
-            
-            MESSAGE_CONTENT='{
-              "config": {
-                "wide_screen_mode": true
-              },
-              "elements": [
-                {
-                  "tag": "markdown",
-                  "content": "🏠 仓库：'${REPO}'\n👤 操作者：'${PR_AUTHOR}'\n🌿 分支：'${BRANCH:-main}'\n📝 事件：'${EVENT_TYPE}'\n\n🔍 错误详情：\n- '${ERROR_DETAILS}'"
-                }
-              ],
-              "header": {
-                "template": "red",
-                "title": {
-                  "content": "❌ Delegates 验证失败",
-                  "tag": "plain_text"
-                }
-              }
-            }'
-            
-            if [ "$EVENT_TYPE" == "pull_request" ] && [ -n "$PR_URL" ]; then
-              MESSAGE_CONTENT='{
-                "config": {
-                  "wide_screen_mode": true
-                },
-                "elements": [
-                  {
-                    "tag": "markdown",
-                    "content": "🏠 仓库：'${REPO}'\n🔢 PR：#'${PR_NUMBER}'\n🌿 分支：'${BRANCH}'\n👤 作者：'${PR_AUTHOR}'\n📝 标题：'${PR_TITLE}'\n🔍 错误详情：\n- '${ERROR_DETAILS}'"
-                  },
-                  {
-                    "tag": "action",
-                    "actions": [
-                      {
-                        "tag": "button",
-                        "text": {
-                          "tag": "plain_text",
-                          "content": "🔗 查看 Pull Request"
-                        },
-                        "type": "primary",
-                        "multi_url": {
-                          "url": "'${PR_URL}'",
-                          "pc_url": "",
-                          "android_url": "",
-                          "ios_url": ""
-                        }
-                      }
-                    ]
-                  }
-                ],
-                "header": {
-                  "template": "red",
-                  "title": {
-                    "content": "❌ Delegates 验证失败",
-                    "tag": "plain_text"
-                  }
-                }
-              }'
+            TEMPLATE="red"
+            TITLE="❌ Delegates 验证失败"
+            ERROR_BODY="${VALIDATION_MESSAGE:-Validation failed}"
+
+            if [ "$EVENT_TYPE" == "pull_request" ]; then
+              CONTENT="🏠 仓库：${REPO}
+          🔢 PR：#${PR_NUMBER}
+          🌿 分支：${BRANCH}
+          👤 作者：${PR_AUTHOR}
+          📝 标题：${PR_TITLE}
+          🔍 错误详情：
+          ${ERROR_BODY}"
+            else
+              CONTENT="🏠 仓库：${REPO}
+          👤 操作者：${PR_AUTHOR}
+          🌿 分支：${BRANCH}
+          📝 事件：${EVENT_TYPE}
+          🔍 错误详情：
+          ${ERROR_BODY}"
             fi
           fi
 
-          # Send notification to Lark
+          # Build card JSON safely with jq (handles quotes/newlines/special chars in any variable)
+          CARD=$(jq -n \
+            --arg title "$TITLE" \
+            --arg template "$TEMPLATE" \
+            --arg content "$CONTENT" \
+            '{
+              config: {wide_screen_mode: true},
+              elements: [{tag: "markdown", content: $content}],
+              header: {template: $template, title: {content: $title, tag: "plain_text"}}
+            }')
+
+          if [ "$EVENT_TYPE" == "pull_request" ] && [ -n "$PR_URL" ]; then
+            CARD=$(echo "$CARD" | jq \
+              --arg pr_url "$PR_URL" \
+              '.elements += [{
+                tag: "action",
+                actions: [{
+                  tag: "button",
+                  text: {tag: "plain_text", content: "🔗 查看 Pull Request"},
+                  type: "primary",
+                  multi_url: {url: $pr_url, pc_url: "", android_url: "", ios_url: ""}
+                }]
+              }]')
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg ts "$TS" \
+            --arg sign "$SIGN" \
+            --argjson card "$CARD" \
+            '{timestamp: $ts, sign: $sign, msg_type: "interactive", card: $card}')
+
           echo "📤 Sending message to Lark..."
           curl -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -H "X-Lark-Request-Timestamp: $TS" \
-            -H "X-Lark-Signature: $SIGN" \
-            -d "{
-              \"timestamp\": \"$TS\",
-              \"sign\": \"$SIGN\",
-              \"msg_type\": \"interactive\",
-              \"card\": ${MESSAGE_CONTENT}
-            }" \
+            -d "$PAYLOAD" \
             --fail-with-body || echo "⚠️ Failed to send Lark notification"
 
           echo "✅ Lark notification sent!"
-
-      - name: Check validation result
-        if: steps.validate.outcome == 'failure'
-        run: |
-          echo "Validation failed, failing the job"
-          exit 1

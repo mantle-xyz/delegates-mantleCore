@@ -4,10 +4,13 @@ This repository manages delegate data for the organization, featuring automated 
 
 ## 📋 Project Structure
 
-```
+```text
 delegates-xxx/
 ├── delegates.json              # Delegate data file
 ├── .github/
+│   ├── delegates-limits.json   # Repository-specific validation limits
+│   ├── scripts/
+│   │   └── validate_delegates.py   # Validation script
 │   └── workflows/
 │       └── validate-delegates.yml  # Automated validation workflow
 └── README.md                   # Project documentation
@@ -25,6 +28,22 @@ The `delegates.json` file contains an array of delegate information. Each delega
 ### Optional Fields
 
 - **InternalReference**: Internal reference (string type)
+
+## ⚙️ Validation Limits
+
+Repository-specific validation limits live in `.github/delegates-limits.json`.
+
+- **max_total**: Required. Maximum total Voteweight allowed in the repository.
+- **max_per_delegate**: Optional. Maximum Voteweight allowed per delegate.
+
+Example:
+
+```json
+{
+  "max_total": 1000,
+  "max_per_delegate": 100
+}
+```
 
 ### Example
 
@@ -67,49 +86,25 @@ The `delegates.json` file contains an array of delegate information. Each delega
 The project uses GitHub Actions for automated validation:
 
 - **Trigger Conditions**: Push to main branch or create Pull Request
+- **Watched Files**: `delegates.json`, `.github/delegates-limits.json`, validation script, workflow file
 - **Validation Content**: 
   - JSON format validation
   - Required field checks
   - Ethereum address format validation
+  - Repository-specific max total Voteweight limit
+  - Optional per-delegate Voteweight limit
 - **PR Comments**: Automatically displays validation results in Pull Request
 
 ### Workflow File
 
-Validation logic is directly written in `.github/workflows/validate-delegates.yml`, requiring no additional validation scripts.
+Workflow orchestration lives in `.github/workflows/validate-delegates.yml`, and the validation logic lives in `.github/scripts/validate_delegates.py`.
 
 ## 🛠️ Local Validation
 
-If you need to validate data format locally, you can use the following Python code:
+If you need to validate data format locally, run:
 
 ```bash
-python3 << 'EOF'
-import json
-import re
-
-def validate_ethereum_address(address):
-    if not isinstance(address, str):
-        return False, "Address must be a string type"
-    if not re.match(r'^(0x)?[0-9a-fA-F]{40}$', address):
-        return False, "Invalid address format"
-    if not address.startswith('0x'):
-        address = '0x' + address
-    return True, address
-
-with open('delegates.json', 'r') as f:
-    delegates = json.load(f)
-
-for i, delegate in enumerate(delegates):
-    if 'Voteweight' not in delegate:
-        print(f"❌ Delegate {i+1} missing Voteweight field")
-    if 'Address' not in delegate:
-        print(f"❌ Delegate {i+1} missing Address field")
-    else:
-        valid, result = validate_ethereum_address(delegate['Address'])
-        if not valid:
-            print(f"❌ Delegate {i+1} invalid address: {result}")
-
-print("✅ Validation completed")
-EOF
+python3 .github/scripts/validate_delegates.py
 ```
 
 ## 📝 Usage Instructions
@@ -139,6 +134,8 @@ EOF
 
 - Ensure all addresses are in valid Ethereum address format
 - Voteweight must be a numeric type, not a string
+- `max_total` must be configured in `.github/delegates-limits.json`
+- `max_per_delegate` is optional and only enforced when present
 - JSON format must be correct, recommend using a JSON-supporting editor
 - Suggest performing local validation before committing
 
@@ -150,6 +147,7 @@ EOF
 2. **Missing Required Fields**: Ensure each delegate includes Voteweight and Address
 3. **Address Format Error**: Ensure address starts with 0x followed by 40 hexadecimal characters
 4. **Data Type Error**: Voteweight must be a number, not a string
+5. **Limit Configuration Error**: Ensure `.github/delegates-limits.json` includes a valid `max_total`
 
 ### Getting Help
 
