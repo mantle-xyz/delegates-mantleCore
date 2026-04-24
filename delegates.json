@@ -1,0 +1,32 @@
+[
+    {
+        "Voteweight": 25000000,
+        "Address": "0x75C53632FB3ed2D97f4427DF9b14e844Ce9B6520",
+        "InternalReference": "Mantle Coordinator"
+    },
+    {
+        "Voteweight": 25000000,
+        "Address": "0xf23d8514b671262Ac91A9f46B97901fA8833aB73",
+        "InternalReference": "Mantle Engineering"
+    },
+    {
+        "Voteweight": 25000000,
+        "Address": "0x3821817c16868CAcc9a7B4556905BeF857aA7EEd",
+        "InternalReference": "Core Advisor, emity.mnt"
+    },
+    {
+        "Voteweight": 25000000,
+        "Address": "0xf87095925339f7fFdde266258f62947567de6aEb",
+        "InternalReference": "Mantle EcoFund, dtoh.eth"
+    },
+    {
+        "Voteweight": 25000000,
+        "Address": "0x09da12f0977eD3534124a4f593D9C1a243beA598",
+        "InternalReference": "Mantle Treasury, cateatpeanut"
+    },
+    {
+        "Voteweight": 25000000,
+        "Address": "0x87465A557BB5fB71E0758E231A7924c36Ea8A6f3",
+        "InternalReference": "Meth Protocol, DefiMaestro"
+    }
+]
